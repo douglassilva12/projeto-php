@@ -64,11 +64,16 @@ function getFooter(){
 }
 
 function executaProcessamentoPagina(){
-    echo '<hr> <h1>POST</h1>';
-    echo "<pre>" . print_r($_POST, true)."</pre>";
-
-    echo '<hr> <h1>GET</h1>';
-    echo "<pre>" . print_r($_GET, true)."</pre>";
+    $bDebugger = false;
+    if($bDebugger){
+        echo '<hr> <h1>POST</h1>';
+        echo "<pre>" . print_r($_POST, true)."</pre>";
+    
+        echo '<hr> <h1>GET</h1>';
+        echo "<pre>" . print_r($_GET, true)."</pre>";
+    } else {
+        echo '<hr><h1>Faturas geradas com sucesso!</h1>';
+    }
 
     if(isset($_POST["usucodigo"])){
         $usucodigo = $_POST["usucodigo"];
@@ -80,16 +85,11 @@ function executaProcessamentoPagina(){
 
     // chama rotina do banco de dados
     require_once ("core/Query.php");
-    // listaDadosUsuarios($usucodigo);
-
-    // Atualizando dados do usuario
-    // senac/admin
-    $usunome = 'admim';
-    $sql_update_usuario = "UPDATE tbusuario SET usunome = 'joao da silva' WHERE usucodigo = $usucodigo";
-    // getQuery()->executaQuery($sql_update_usuario);
-
+    
     $aListaMeses = $_POST["mesoption"];
-    criaFatura($usucodigo = 1, $aListaMeses);
+    $usucodigo = $_POST["usucodigo"];
+    
+    criaFatura($usucodigo, $aListaMeses);
 }
 
 function listaDadosUsuarios($usucodigo){
@@ -121,10 +121,45 @@ define ("STATUS_FATURA_PAGA",2);
 //	CONSTRAINT pk_tbfatura PRIMARY KEY (id)
 //);
 
-function geraListaServicosPorUsuario($usucodigo){
+function geraListaServicosPorUsuario($usucodigo, $idFatura, $mes, $ano_pagto){
 
     // lista os servicos e insere na tbfaturadetalhe
-
+    $aDados = getQuery()->selectAll("
+        select tbservico.codigoservico,
+			   descricaoservico,
+			   tbservico.circuito,
+			   tbservico.valorservico
+		  from tbservicousuario
+    inner join tbservico on (tbservico.codigoservico = tbservicousuario.codigoservico)
+         where tbservicousuario.usucodigo = $usucodigo");
+    
+    ///echo '<hr>';
+    $valorTotalFatura = 0;
+    foreach ($aDados as $oDadosUsuario){
+        //echo '<br>Usuario:' . json_encode($oDadosUsuario);
+        //echo 'codigoservico:' . $oDadosUsuario["codigoservico"];
+    
+        $codigoservico    = $oDadosUsuario["codigoservico"];
+        $descricaoservico = $oDadosUsuario["descricaoservico"];
+        $circuito         = $oDadosUsuario["circuito"];
+        $valorservico     = $oDadosUsuario["valorservico"];
+    
+        $valorTotalFatura = $valorTotalFatura + floatval($valorservico);
+        
+        $datainicio = $ano_pagto . "-" . $mes . "-01";
+        $datafim = $ano_pagto . "-" . $mes . '-30';
+        if($mes == 2){
+            $datafim = $ano_pagto . "-" . $mes . '-28';
+        }
+        
+        // inserir os dados de detalhes da fatura
+        $sql_insert_detalhe = "INSERT INTO public.tbfaturadetalhe (idfatura, codigoservico, descricaoservico,datainicioservico, datafimservico, circuito, valorservico)
+         VALUES($idFatura, $codigoservico, '$descricaoservico', '$datainicio', '$datafim', '$circuito', $valorservico);";
+    
+        // Executa sql de insert no banco de dados
+        getQuery()->executaQuery($sql_insert_detalhe);
+    }
+    
     return $totalServico = 100;
 }
 
@@ -137,6 +172,7 @@ function criaFatura($usucodigo, $aListaMeses){
     } else {
         $aListaMeses = array($aListaMeses);
     }
+    
     // Percorre os meses que deve gerar fatura
     foreach ($aListaMeses as $mes){
 
@@ -147,35 +183,42 @@ function criaFatura($usucodigo, $aListaMeses){
         $mes_pagto = $mes;
         $ano_pagto = 2022;
         if(intval($mes) == 12){
-            $mes_pagto = 1;
+            $mes_pagto = '01';
             $ano_pagto = $ano_pagto + 1;
         }
 
-        $usucodigo = 1;
-        $data_vencimento = '2022-' . $mes . '-10';
+        $data_vencimento = $ano_pagto . '-' . $mes . '-10';
         $data_pagamento = $ano_pagto . '-' . $mes_pagto . '-10';
 
         // gera a lista de servicos
-
-        $valorFatura = geraListaServicosPorUsuario($usucodigo);
+        $aDados = getQuery()->select("select nextval('public.tbfatura_id_seq') as id");
+        $idFatura = $aDados["id"];
+        
+        // echo 'id da fatura gerado: ' . $idFatura;
+        
+        $valorFatura = geraListaServicosPorUsuario($usucodigo, $idFatura, $mes, $ano_pagto);
 
         $valorvencimento = $valorFatura;
         $valorpagamento  = 0;
         $status          = STATUS_FATURA_EM_ABERTO;
         $sql_insert_fatura = "INSERT INTO public.tbfatura
-            (datavencimento, datapagamento, valorvencimento, valorpagamento, status, usucodigo)
-            VALUES('$data_vencimento', 
-                   '$data_pagamento', 
+            (id, datavencimento, datapagamento, valorvencimento, valorpagamento, status, usucodigo)
+            VALUES($idFatura,
+                   '$data_vencimento',
+                   '$data_pagamento',
                    $valorvencimento, $valorpagamento, $status, $usucodigo);";
-
+    
+        // Executa sql de insert no banco de dados
         getQuery()->executaQuery($sql_insert_fatura);
     }
 
 }
 
-
 // Monta a pagina
 getHeader();
+
 getCorpo();
+
 getFooter();
+
 
