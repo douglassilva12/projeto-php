@@ -1,0 +1,14 @@
+{
+  "builds": [
+    {
+      "src": "*.php",
+      "use": "now-php@canary"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.php"
+    }
+  ]
+}
